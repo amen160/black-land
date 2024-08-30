@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Country City Fare</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            display: flex;
+            height: 100vh;
+            overflow: auto; /* Cho phép cuộn toàn trang */
+        }
+        #container {
+            display: flex;
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+        #countries {
+            width: 25%; /* Thu hẹp cột quốc gia */
+            border-right: 1px solid #ddd;
+            padding: 10px;
+            box-sizing: border-box;
+            overflow-y: auto; /* Cho phép cuộn nội dung */
+        }
+        #results {
+            width: 75%; /* Mở rộng cột kết quả */
+            padding: 10px;
+            box-sizing: border-box;
+            position: relative;
+            overflow-y: auto; /* Cho phép cuộn nội dung */
+        }
+        #loading {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 18px;
+            font-weight: bold;
+            z-index: 100;
+        }
+        #overlay {
+            display: none;
+            position: fixed; /* Sử dụng fixed để phủ toàn bộ cửa sổ */
+            top: 0;
+            left: 0;
+            width: 100vw; /* Chiếm toàn bộ chiều rộng cửa sổ */
+            height: 100vh; /* Chiếm toàn bộ chiều cao cửa sổ */
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 50;
+            overflow: hidden; /* Ngăn cuộn nội dung bên dưới */
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        table, th, td {
+            border: 1px solid #ddd;
+        }
+        th, td {
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f4f4f4;
+        }
+        #no-results {
+            display: none;
+            font-style: italic;
+        }
+        pre {
+            white-space: pre-wrap; /* Allow wrapping */
+            word-wrap: break-word; /* Allow breaking long words */
+        }
+        .narrow {
+            width: 15%; /* Thu hẹp cột country */
+        }
+        .wide {
+            width: 35%; /* Mở rộng cột Vehicle Class */
+        }
+        .fare-info {
+            width: 50%; /* Cột Fare Info chiếm phần còn lại */
+        }
+        #country-list li {
+            padding: 8px;
+            cursor: pointer; /* Thay đổi con trỏ thành hình bàn tay */
+            border-bottom: 1px solid #ddd;
+        }
+        #country-list li:hover {
+            background-color: #f0f0f0;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading">Loading...</div>
+    <div id="overlay"></div>
+    <div id="container">
+        <div id="countries">
+            <h2>Countries</h2>
+            <ul id="country-list"></ul>
+        </div>
+        <div id="results">
+            <h2 id="results-title">Fares</h2>
+            <table id="price-table">
+                <thead>
+                    <tr>
+                        <th class="narrow">City</th>
+                        <th class="wide">Vehicle Class</th>
+                        <th class="fare-info">One Way</th>
+                    </tr>
+                </thead>
+                <tbody id="price-results">
+                </tbody>
+            </table>
+            <div id="no-results">No results available</div>
+        </div>
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const countryList = document.getElementById('country-list');
+            const priceTable = document.getElementById('price-results');
+            const resultsTitle = document.getElementById('results-title');
+            const loading = document.getElementById('loading');
+            const overlay = document.getElementById('overlay');
+            const noResults = document.getElementById('no-results');
+            
+            // Fetch countries from API 1
+            fetch('http://149.28.211.80:6969/public-api/get-cities')
+                .then(response => response.json())
+                .then(data => {
+                    const countries = data.data;
+                    
+                    // Sort countries alphabetically
+                    countries.sort((a, b) => a.country.localeCompare(b.country));
+                    
+                    countries.forEach(country => {
+                        const li = document.createElement('li');
+                        li.textContent = country.country;
+                        li.dataset.cities = country.cities;
+                        li.dataset.country = country.country; // Store country name
+                        li.addEventListener('click', function () {
+                            fetchPrices(this.dataset.cities, this.dataset.country);
+                        });
+                        countryList.appendChild(li);
+                    });
+                })
+                .catch(error => console.error('Error fetching countries:', error));
+
+            function fetchPrices(cities, countryName) {
+                overlay.style.display = 'block'; // Show overlay
+                loading.style.display = 'block'; // Show loading indicator
+                document.body.style.overflow = 'hidden'; // Disable scroll
+                resultsTitle.textContent = `Fares in ${countryName}`; // Update title
+                fetch(`http://149.28.211.80:6969/public-api/get-blacklane-fares?locations=${encodeURIComponent(cities)}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        priceTable.innerHTML = '';
+                        if (data.result.length === 0) {
+                            noResults.style.display = 'block';
+                        } else {
+                            noResults.style.display = 'none';
+                            data.result.forEach(result => {
+                                result.results.forEach(price => {
+                                    const fareInfo = JSON.stringify(price, null, 2); // Format JSON
+                                    const tr = document.createElement('tr');
+                                    tr.innerHTML = `
+                                        <td>${result.city}</td>
+                                        <td>${price.vehicle.class.replace('_', ' ').toUpperCase()}</td>
+                                        <td class="fare-info"><pre>${fareInfo}</pre></td>
+                                    `;
+                                    priceTable.appendChild(tr);
+                                });
+                            });
+                        }
+                        loading.style.display = 'none'; // Hide loading indicator
+                        overlay.style.display = 'none'; // Hide overlay
+                        document.body.style.overflow = 'auto'; // Enable scroll
+                    })
+                    .catch(error => {
+                        console.error('Error fetching prices:', error);
+                        loading.style.display = 'none'; // Hide loading indicator
+                        overlay.style.display = 'none'; // Hide overlay
+                        document.body.style.overflow = 'auto'; // Enable scroll
+                    });
+            }
+        });
+    </script>
+</body>
+</html>
